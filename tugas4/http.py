@@ -1,6 +1,7 @@
 import sys
 import os.path
 import uuid
+import base64
 from glob import glob
 from datetime import datetime
 
@@ -105,25 +106,29 @@ class HttpServer:
 		return self.response(200,'OK',isi,headers)
 
 	def http_post(self,object_address,headers):
-		response_headers = {}
-		isi = "kosong"
-
-		if (object_address == '/upload'):
-			if 'Content-Type' in headers:
-				content_type = headers['Content-Type']
-				# Terima semua jenis content untuk upload sederhana
+		if object_address == '/upload':
+			try:
 				body = headers.get('body', '')
-				if body:
-					filename = str(uuid.uuid4()) + '.txt'
-					with open(filename, 'w') as f:  # Gunakan 'w' untuk text
-						f.write(body)
-					isi = f"File uploaded as {filename}"
-				else:
-					return self.response(400,'Bad Request','No content to upload',{})
-			else:
-				return self.response(400,'Bad Request','Missing Content-Type',{})
-
-		return self.response(200,'OK',isi,response_headers)
+				# Parse body format: filename=nama.jpg&data=base64data
+				parts = dict(item.split('=', 1) for item in body.split('&') if '=' in item)
+				filename = parts.get('filename')
+				b64data = parts.get('data')
+				
+				if not filename or not b64data:
+					raise ValueError("Missing filename or data")
+				
+				# Decode base64 data
+				filedata = base64.b64decode(b64data)
+				
+				# Write file
+				with open(filename, 'wb') as f:
+					f.write(filedata)
+				
+				return self.response(201, 'Created', f'Uploaded {filename}', {'Content-Type': 'text/plain'})
+			except Exception as e:
+				return self.response(400, 'Bad Request', str(e), {'Content-Type': 'text/plain'})
+		
+		return self.response(404, 'Not Found', '', {})	
 	
 	def http_delete(self, object_address, headers):
 		headers = {}

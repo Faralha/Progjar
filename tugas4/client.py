@@ -4,6 +4,7 @@ import json
 import logging
 import ssl
 import os
+import base64
 
 # Ganti ke server lokal
 server_address = ('localhost', 8889)
@@ -61,16 +62,21 @@ def test_get_files():
 
 
 def test_upload_file():
-    """Test POST /upload dengan file donalbebek.jpg"""
-    # Baca file jika ada
-    file_content = ""
+    """Test POST /upload dengan file donalbebek.jpg menggunakan format sederhana"""
     try:
         with open('donalbebek.jpg', 'rb') as f:
-            file_content = f.read().decode('latin-1')
+            file_bytes = f.read()
+            b64_content = base64.b64encode(file_bytes).decode('utf-8')
     except FileNotFoundError:
-        file_content = "Mock content for donalbebek.jpg image file"
+        # Mock content untuk testing
+        mock_content = b"Mock binary content for donalbebek.jpg"
+        b64_content = base64.b64encode(mock_content).decode('utf-8')
     
-    cmd = f"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Type: image/jpeg\r\nContent-Length: {len(file_content)}\r\n\r\n{file_content}"
+    # Format body: filename=nama&data=base64data
+    filename = "donalbebek.jpg"
+    body = f"filename={filename}&data={b64_content}"
+    
+    cmd = f"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(body)}\r\n\r\n{body}"
     hasil = send_command(cmd)
     print("=== POST /upload donalbebek.jpg ===")
     print(hasil)
