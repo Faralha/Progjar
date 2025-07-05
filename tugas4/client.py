@@ -92,6 +92,21 @@ def test_delete_file():
     print("\n")
 
 
+def test_upload_simple():
+    """Test POST /upload dengan data sederhana"""
+    filename = "test.txt"
+    simple_data = base64.b64encode(b"Hello World").decode('utf-8')
+    body = f"filename={filename}&data={simple_data}"
+    
+    print(f"Simple body length: {len(body)}")
+    
+    cmd = f"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(body)}\r\n\r\n{body}"
+    hasil = send_command(cmd)
+    print("=== POST /upload simple test ===")
+    print(hasil)
+    print("\n")
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.WARNING)
     
@@ -100,11 +115,14 @@ if __name__ == '__main__':
     # 1. GET /files
     test_get_files()
     
-    # 2. POST /upload donalbebek.jpg
-    test_upload_file()
+    # 2. POST /upload simple test dulu
+    test_upload_simple()
     
-    # 3. DELETE /donalbebek.jpg
-    test_delete_file()
+    # 3. POST /upload donalbebek.jpg (comment dulu)
+    # test_upload_file()
+    
+    # 4. DELETE /donalbebek.jpg
+    # test_delete_file()
     
     # Test lagi GET /files untuk melihat perubahan
     print("=== GET /files (after operations) ===")
