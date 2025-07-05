@@ -6,124 +6,112 @@ import ssl
 import os
 import base64
 
-# Ganti ke server lokal
 server_address = ('localhost', 8889)
 
 
 def make_socket(destination_address='localhost', port=8889):
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_address = (destination_address, port)
-        logging.warning(f"connecting to {server_address}")
-        sock.connect(server_address)
+        # Timeout
+        sock.settimeout(10)
+        sock.connect((destination_address, port))
         return sock
     except Exception as ee:
-        logging.warning(f"error {str(ee)}")
+        logging.warning(f"error saat membuat socket: {str(ee)}")
         return None
 
 
 def send_command(command_str, is_secure=False):
-    alamat_server = server_address[0]
-    port_server = server_address[1]
-    
+    alamat_server, port_server = server_address
     sock = make_socket(alamat_server, port_server)
     if not sock:
-        return False
+        return ""
 
+    logging.warning(f"Mengirim pesan:\n{command_str.splitlines()[0]}")
     try:
-        logging.warning(f"sending message: {command_str}")
         sock.sendall(command_str.encode())
-        
-        # Look for the response
-        data_received = ""
-        while True:
-            data = sock.recv(2048)
-            if data:
-                data_received += data.decode()
-                if "\r\n\r\n" in data_received:
-                    break
-            else:
+
+        response = b""
+
+        while b"\r\n\r\n" not in response:
+            chunk = sock.recv(2048)
+            if not chunk:
                 break
-        
-        sock.close()
-        return data_received
+            response += chunk
+
+        # Pisahkan header dan body
+        header_part, body_part = response.split(b"\r\n\r\n", 1)
+        headers = header_part.decode(errors='ignore').split("\r\n")
+
+        content_length = 0
+        for line in headers:
+            if line.lower().startswith("content-length:"):
+                try:
+                    content_length = int(line.split(":")[1].strip())
+                except (ValueError, IndexError):
+                    pass
+                break
+
+        while len(body_part) < content_length:
+            more_data = sock.recv(2048)
+            if not more_data:
+                break # Koneksi ditutup
+            body_part += more_data
+
+        return (header_part + b"\r\n\r\n" + body_part).decode(errors='ignore')
+
     except Exception as ee:
-        logging.warning(f"error during data receiving {str(ee)}")
-        return False
-
-
-def test_get_files():
-    """Test GET /files"""
-    cmd = "GET /files HTTP/1.1\r\nHost: localhost\r\n\r\n"
-    hasil = send_command(cmd)
-    print("=== GET /files ===")
-    print(hasil)
-    print("\n")
-
-
-def test_upload_file():
-    """Test POST /upload dengan file donalbebek.jpg menggunakan format sederhana"""
-    try:
-        with open('donalbebek.jpg', 'rb') as f:
-            file_bytes = f.read()
-            b64_content = base64.b64encode(file_bytes).decode('utf-8')
-    except FileNotFoundError:
-        # Mock content untuk testing
-        mock_content = b"Mock binary content for donalbebek.jpg"
-        b64_content = base64.b64encode(mock_content).decode('utf-8')
-    
-    # Format body: filename=nama&data=base64data
-    filename = "donalbebek.jpg"
-    body = f"filename={filename}&data={b64_content}"
-    
-    cmd = f"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(body)}\r\n\r\n{body}"
-    hasil = send_command(cmd)
-    print("=== POST /upload donalbebek.jpg ===")
-    print(hasil)
-    print("\n")
-
-
-def test_delete_file():
-    """Test DELETE /donalbebek.jpg"""
-    cmd = "DELETE /donalbebek.jpg HTTP/1.1\r\nHost: localhost\r\n\r\n"
-    hasil = send_command(cmd)
-    print("=== DELETE /donalbebek.jpg ===")
-    print(hasil)
-    print("\n")
-
-
-def test_upload_simple():
-    """Test POST /upload dengan data sederhana"""
-    filename = "test.txt"
-    simple_data = base64.b64encode(b"Hello World").decode('utf-8')
-    body = f"filename={filename}&data={simple_data}"
-    
-    print(f"Simple body length: {len(body)}")
-    
-    cmd = f"POST /upload HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(body)}\r\n\r\n{body}"
-    hasil = send_command(cmd)
-    print("=== POST /upload simple test ===")
-    print(hasil)
-    print("\n")
+        logging.warning(f"Error saat menerima data: {str(ee)}")
+        return ''
+    finally:
+        if sock:
+            sock.close()
 
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.WARNING)
-    
-    print("Testing HTTP Server endpoints...\n")
-    
-    # 1. GET /files
-    test_get_files()
-    
-    # 2. POST /upload simple test dulu
-    test_upload_simple()
-    
-    # 3. POST /upload donalbebek.jpg (comment dulu)
-    # test_upload_file()
-    
-    # 4. DELETE /donalbebek.jpg
-    # test_delete_file()
-    
-    # Test lagi GET /files untuk melihat perubahan
-    print("=== GET /files (after operations) ===")
-    test_get_files()
+
+    # --- 1. GET /files (sebelum operasi) ---
+    print('\n--- GET /files (sebelum operasi) ---')
+    list_cmd = 'GET /files HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'
+    print(send_command(list_cmd))
+
+    # --- 2. UPLOAD FILE donalbebek.jpg ---
+    print('\n--- UPLOAD FILE donalbebek.jpg ---')
+    filepath = 'donalbebek.jpg'
+    if os.path.isfile(filepath):
+        with open(filepath, 'rb') as f:
+            filedata = f.read()
+        
+        filename = os.path.basename(filepath)
+        filedata_b64 = base64.b64encode(filedata).decode()
+        
+        # Body dengan format: filename=...&data=...
+        body = f'filename={filename}&data={filedata_b64}'
+        content_length = len(body.encode())
+
+        upload_request = (
+            f'POST /upload HTTP/1.1\r\n'
+            f'Host: localhost\r\n'
+            f'Content-Length: {content_length}\r\n'
+            f'Content-Type: application/x-www-form-urlencoded\r\n'
+            f'Connection: close\r\n'
+            f'\r\n'
+            f'{body}'
+        )
+        print(send_command(upload_request))
+    else:
+        print(f'File {filepath} tidak ditemukan, upload dibatalkan.')
+
+    # --- 3. GET /files (setelah upload) ---
+    print('\n--- GET /files (setelah upload) ---')
+    print(send_command(list_cmd))
+
+    # --- 4. DELETE donalbebek.jpg ---
+    print('\n--- DELETE donalbebek.jpg ---')
+    delete_cmd = 'DELETE /donalbebek.jpg HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n'
+    print(send_command(delete_cmd))
+
+    # --- 5. GET /files (setelah delete) ---
+    print('\n--- GET /files (setelah delete) ---')
+    print(send_command(list_cmd))
